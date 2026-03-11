@@ -68,6 +68,22 @@ Granular overrides remain available if needed (`PAPERCLIP_AUTH_PUBLIC_BASE_URL`,
 
 Set `PAPERCLIP_ALLOWED_HOSTNAMES` explicitly only when you need additional hostnames beyond the public URL host (for example Tailscale/LAN aliases or multiple private hostnames).
 
+## Compose with PostgreSQL (docker-compose.yml)
+
+Use `docker-compose.yml` when you want a dedicated Postgres container (e.g. to avoid port conflicts with a local Postgres on 5432). Default host port for Postgres is `5433` (override with `POSTGRES_PORT`).
+
+```sh
+docker compose -f docker-compose.yml up --build
+```
+
+Open: `http://localhost:3100`. On first run the UI shows **Instance setup required** and tells you to run `pnpm paperclipai auth bootstrap-ceo`. Because the app runs in Docker, run the bootstrap command **inside the server container** (the image includes a built CLI so no npm download):
+
+```sh
+docker compose exec -w /app server node cli/dist/index.js auth bootstrap-ceo -d /paperclip --base-url http://localhost:3100
+```
+
+If you set `PAPERCLIP_PUBLIC_URL` (e.g. to a custom domain or port), use that value for `--base-url` instead. The command prints a one-time invite URL; open it in the browser to create the first instance admin, then reload the app.
+
 ## Claude + Codex Local Adapters in Docker
 
 The image pre-installs:

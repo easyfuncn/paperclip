@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { agentsApi } from "../api/agents";
+import { skillsApi, type SkillIndexEntry } from "../api/skills";
 import { queryKeys } from "../lib/queryKeys";
 import { AGENT_ROLES } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Shield, User } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Shield, User, ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { cn, agentUrl } from "../lib/utils";
 import { roleLabels } from "../components/agent-config-primitives";
 import { AgentConfigForm, type CreateConfigValues } from "../components/AgentConfigForm";
@@ -24,6 +30,13 @@ import {
   DEFAULT_CODEX_LOCAL_MODEL,
 } from "@paperclipai/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
+
+const ROLE_SKILL_TAGS: Record<string, string[]> = {
+  researcher: ["media", "image", "video", "researcher", "publish"],
+  general: ["media", "publish", "general"],
+  cmo: ["media", "publish", "coordination"],
+  engineer: ["coordination"],
+};
 
 const SUPPORTED_ADVANCED_ADAPTER_TYPES = new Set<CreateConfigValues["adapterType"]>([
   "claude_local",
@@ -63,10 +76,17 @@ export function NewAgent() {
   const [title, setTitle] = useState("");
   const [role, setRole] = useState("general");
   const [reportsTo, setReportsTo] = useState("");
+  const [capabilities, setCapabilities] = useState("");
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
   const [roleOpen, setRoleOpen] = useState(false);
   const [reportsToOpen, setReportsToOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const { data: skillsIndex } = useQuery({
+    queryKey: queryKeys.skills.index,
+    queryFn: () => skillsApi.getIndex(),
+  });
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -89,6 +109,25 @@ export function NewAgent() {
 
   const isFirstAgent = !agents || agents.length === 0;
   const effectiveRole = isFirstAgent ? "ceo" : role;
+
+  const skillsForRole = useMemo(() => {
+    const list = skillsIndex?.skills ?? [];
+    const roleTags = new Set(ROLE_SKILL_TAGS[effectiveRole] ?? []);
+    if (roleTags.size === 0) return list;
+    const recommended = list.filter((s) => s.tags.some((t) => roleTags.has(t)));
+    const rest = list.filter((s) => !recommended.includes(s));
+    return [...recommended, ...rest];
+  }, [skillsIndex?.skills, effectiveRole]);
+
+  function handleApplySkill(skill: SkillIndexEntry) {
+    setCapabilities((prev) =>
+      prev ? `${prev}；使用技能：${skill.name}` : `使用技能：${skill.name}`,
+    );
+    setConfigValues((prev) => {
+      const line = `\n\n使用技能 ${skill.name}：${skill.description.slice(0, 120)}${skill.description.length > 120 ? "…" : ""}`;
+      return { ...prev, promptTemplate: (prev.promptTemplate ?? "") + line };
+    });
+  }
 
   useEffect(() => {
     setBreadcrumbs([
@@ -170,6 +209,7 @@ export function NewAgent() {
       role: effectiveRole,
       ...(title.trim() ? { title: title.trim() } : {}),
       ...(reportsTo ? { reportsTo } : {}),
+      ...(capabilities.trim() ? { capabilities: capabilities.trim() } : {}),
       adapterType: configValues.adapterType,
       adapterConfig: buildAdapterConfig(),
       runtimeConfig: {
@@ -298,6 +338,57 @@ export function NewAgent() {
             </PopoverContent>
           </Popover>
         </div>
+
+        {/* Optional skills */}
+        <Collapsible open={skillsOpen} onOpenChange={setSkillsOpen}>
+          <div className="border-t border-border px-4 py-2">
+            <CollapsibleTrigger className="flex w-full items-center gap-2 text-left text-sm font-medium text-muted-foreground hover:text-foreground">
+              {skillsOpen ? (
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0" />
+              )}
+              可选技能
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <p className="text-xs text-muted-foreground mt-1 mb-2">
+                按当前角色推荐；应用后将写入 Capabilities 与 Prompt 说明
+              </p>
+              <ul className="space-y-2 max-h-48 overflow-y-auto">
+                {(skillsForRole.length === 0 ? skillsIndex?.skills ?? [] : skillsForRole).map(
+                  (skill) => (
+                    <li
+                      key={skill.name}
+                      className="flex items-start justify-between gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2 text-sm"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium text-foreground">{skill.name}</span>
+                        {skill.description && (
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                            {skill.description}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 h-7 px-2 text-xs"
+                        onClick={() => handleApplySkill(skill)}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        应用
+                      </Button>
+                    </li>
+                  ),
+                )}
+              </ul>
+              {(!skillsIndex?.skills?.length) && (
+                <p className="text-xs text-muted-foreground py-2">暂无技能目录</p>
+              )}
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
 
         {/* Shared config form */}
         <AgentConfigForm

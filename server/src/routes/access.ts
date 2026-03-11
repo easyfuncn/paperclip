@@ -95,22 +95,133 @@ function requestBaseUrl(req: Request) {
   return `${proto}://${host}`;
 }
 
-function readSkillMarkdown(skillName: string): string | null {
-  const normalized = skillName.trim().toLowerCase();
-  if (normalized !== "paperclip" && normalized !== "paperclip-create-agent")
-    return null;
+const SKILL_NAME_REGEX = /^[a-z0-9-]+$/;
+
+function getSkillsRoot(): string | null {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.resolve(moduleDir, "../../skills", normalized, "SKILL.md"), // published: dist/routes/ -> <pkg>/skills/
-    path.resolve(process.cwd(), "skills", normalized, "SKILL.md"), // cwd (e.g. monorepo root)
-    path.resolve(moduleDir, "../../../skills", normalized, "SKILL.md") // dev: src/routes/ -> repo root/skills/
+    path.resolve(moduleDir, "../../skills"),
+    path.resolve(process.cwd(), "skills"),
+    path.resolve(moduleDir, "../../../skills")
   ];
-  for (const skillPath of candidates) {
+  for (const dir of candidates) {
     try {
-      return fs.readFileSync(skillPath, "utf8");
+      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) return dir;
     } catch {
-      // Continue to next candidate.
+      // continue
     }
+  }
+  return null;
+}
+
+function parseSkillFrontmatter(markdown: string): {
+  name?: string;
+  description?: string;
+  tags?: string[];
+} {
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  const block = match[1]!;
+  const result: { name?: string; description?: string; tags?: string[] } = {};
+  let inDescription = false;
+  let descLines: string[] = [];
+  const lines = block.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (inDescription) {
+      if (line.match(/^\w+:/)) {
+        inDescription = false;
+        result.description = descLines.join(" ").trim();
+        descLines = [];
+      } else {
+        descLines.push(line.replace(/^\s+/, ""));
+        continue;
+      }
+    }
+    const nameMatch = line.match(/^name:\s*(.+)$/);
+    if (nameMatch) {
+      result.name = nameMatch[1]!.trim().replace(/^["']|["']$/g, "");
+      continue;
+    }
+    const descStart = line.match(/^description:\s*(>)?\s*(.*)$/);
+    if (descStart) {
+      if (descStart[2]) descLines.push(descStart[2]!);
+      inDescription = descStart[1] === ">";
+      if (!inDescription && descLines.length) {
+        result.description = descLines.join(" ").trim();
+        descLines = [];
+      }
+      continue;
+    }
+    const tagsMatch = line.match(/^tags:\s*(.*)$/);
+    if (tagsMatch) {
+      const rest = tagsMatch[1]!.trim();
+      if (rest.startsWith("[")) {
+        result.tags = rest
+          .replace(/^\[|\]$/g, "")
+          .split(",")
+          .map((s) => s.trim().replace(/^["']|["']$/g, ""));
+      } else result.tags = [];
+      continue;
+    }
+    if (line.match(/^\s+-\s+/) && Array.isArray(result.tags)) {
+      result.tags.push(line.replace(/^\s+-\s+/, "").trim().replace(/^["']|["']$/g, ""));
+    }
+  }
+  if (descLines.length) result.description = descLines.join(" ").trim();
+  return result;
+}
+
+export type SkillIndexEntry = {
+  name: string;
+  description: string;
+  path: string;
+  tags: string[];
+};
+
+function buildSkillsIndex(): SkillIndexEntry[] {
+  const root = getSkillsRoot();
+  if (!root) return [];
+  const entries: SkillIndexEntry[] = [];
+  try {
+    const dirs = fs.readdirSync(root, { withFileTypes: true });
+    for (const d of dirs) {
+      if (!d.isDirectory()) continue;
+      const dirName = d.name;
+      if (!SKILL_NAME_REGEX.test(dirName)) continue;
+      const skillPath = path.join(root, dirName, "SKILL.md");
+      try {
+        if (!fs.existsSync(skillPath) || !fs.statSync(skillPath).isFile())
+          continue;
+        const raw = fs.readFileSync(skillPath, "utf8");
+        const fm = parseSkillFrontmatter(raw);
+        entries.push({
+          name: fm.name ?? dirName,
+          description: typeof fm.description === "string" ? fm.description : "",
+          path: `/api/skills/${dirName}`,
+          tags: Array.isArray(fm.tags) ? fm.tags : []
+        });
+      } catch {
+        // skip this skill
+      }
+    }
+  } catch {
+    // return whatever we have
+  }
+  return entries.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function readSkillMarkdown(skillName: string): string | null {
+  const normalized = skillName.trim().toLowerCase();
+  if (!normalized || !SKILL_NAME_REGEX.test(normalized)) return null;
+  const root = getSkillsRoot();
+  if (!root) return null;
+  const skillPath = path.join(root, normalized, "SKILL.md");
+  try {
+    if (fs.existsSync(skillPath) && fs.statSync(skillPath).isFile())
+      return fs.readFileSync(skillPath, "utf8");
+  } catch {
+    // fall through
   }
   return null;
 }
@@ -1607,15 +1718,7 @@ export function accessRoutes(
   }
 
   router.get("/skills/index", (_req, res) => {
-    res.json({
-      skills: [
-        { name: "paperclip", path: "/api/skills/paperclip" },
-        {
-          name: "paperclip-create-agent",
-          path: "/api/skills/paperclip-create-agent"
-        }
-      ]
-    });
+    res.json({ skills: buildSkillsIndex() });
   });
 
   router.get("/skills/:skillName", (req, res) => {
