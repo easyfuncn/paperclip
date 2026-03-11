@@ -30,4 +30,34 @@ export const projectsApi = {
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
+  listProjectAssets: (projectId: string, companyId?: string) =>
+    api.get<{ items: ProjectAssetItem[] }>(projectPath(projectId, companyId, "/assets")),
+  listProjectWorkspaceFiles: (projectId: string, companyId?: string, subPath?: string) => {
+    const base = projectPath(projectId, companyId, "/files");
+    const url = subPath ? `${base}${base.includes("?") ? "&" : "?"}path=${encodeURIComponent(subPath)}` : base;
+    return api.get<ProjectWorkspaceFilesResponse>(url);
+  },
 };
+
+export interface ProjectAssetItem {
+  id: string;
+  objectKey: string;
+  contentType: string;
+  byteSize: number;
+  originalFilename: string | null;
+  createdAt: string;
+  contentPath: string;
+}
+
+export interface WorkspaceFileEntry {
+  name: string;
+  type: "file" | "directory";
+  path: string;
+  size?: number;
+}
+
+export interface ProjectWorkspaceFilesResponse {
+  workspaceId: string | null;
+  path: string;
+  entries: WorkspaceFileEntry[];
+}

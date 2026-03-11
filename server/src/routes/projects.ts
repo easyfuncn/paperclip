@@ -1,3 +1,6 @@
+import path from "node:path";
+import { createReadStream } from "node:fs";
+import fs from "node:fs/promises";
 import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import {
@@ -8,13 +11,37 @@ import {
   updateProjectWorkspaceSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { projectService, logActivity } from "../services/index.js";
+import { projectService, assetService, logActivity } from "../services/index.js";
+import {
+  getWorkspaceWithCwd,
+  listWorkspaceDirectory,
+  resolveUnder,
+  type WorkspaceFileEntry,
+} from "../services/workspace-files.js";
 import { conflict } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+
+const MIME_BY_EXT: Record<string, string> = {
+  ".md": "text/markdown",
+  ".mdx": "text/markdown",
+  ".txt": "text/plain",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".ogg": "video/ogg",
+  ".mov": "video/quicktime",
+};
 
 export function projectRoutes(db: Db) {
   const router = Router();
   const svc = projectService(db);
+  const assetSvc = assetService(db);
 
   async function resolveCompanyIdForProjectReference(req: Request) {
     const companyIdQuery = req.query.companyId;
@@ -147,6 +174,108 @@ export function projectRoutes(db: Db) {
     assertCompanyAccess(req, existing.companyId);
     const workspaces = await svc.listWorkspaces(id);
     res.json(workspaces);
+  });
+
+  router.get("/projects/:id/assets", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const rows = await assetSvc.listByProject(existing.companyId, id);
+    const items = rows.map((row) => ({
+      id: row.id,
+      objectKey: row.objectKey,
+      contentType: row.contentType,
+      byteSize: row.byteSize,
+      originalFilename: row.originalFilename,
+      createdAt: row.createdAt,
+      contentPath: `/api/assets/${row.id}/content`,
+    }));
+    res.json({ items });
+  });
+
+  router.get("/projects/:id/files/content", async (req, res, next) => {
+    const id = req.params.id as string;
+    const rawPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const workspaces = await svc.listWorkspaces(id);
+    const workspace = getWorkspaceWithCwd(workspaces);
+    if (!workspace?.cwd) {
+      res.status(404).json({ error: "No workspace directory configured for this project" });
+      return;
+    }
+    if (!rawPath) {
+      res.status(400).json({ error: "Query 'path' is required" });
+      return;
+    }
+    const resolved = resolveUnder(workspace.cwd, rawPath);
+    if (!resolved) {
+      res.status(400).json({ error: "Invalid path" });
+      return;
+    }
+    try {
+      const stat = await fs.stat(resolved);
+      if (!stat.isFile()) {
+        res.status(400).json({ error: "Not a file" });
+        return;
+      }
+      const ext = path.extname(resolved).toLowerCase();
+      const contentType = MIME_BY_EXT[ext] ?? "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "private, max-age=60");
+      const filename = path.basename(resolved);
+      res.setHeader("Content-Disposition", `inline; filename="${filename.replaceAll('"', "")}"`);
+      const stream = createReadStream(resolved);
+      stream.on("error", (err) => next(err));
+      stream.pipe(res);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        res.status(404).json({ error: "File not found" });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  router.get("/projects/:id/files", async (req, res, next) => {
+    const id = req.params.id as string;
+    const subPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const workspaces = await svc.listWorkspaces(id);
+    const workspace = getWorkspaceWithCwd(workspaces);
+    if (!workspace?.cwd) {
+      res.json({ workspaceId: null, path: "", entries: [] });
+      return;
+    }
+    try {
+      const entries: WorkspaceFileEntry[] = await listWorkspaceDirectory(workspace, subPath || undefined);
+      res.json({
+        workspaceId: workspace.id,
+        path: subPath,
+        entries: entries.map((e) => ({
+          name: e.name,
+          type: e.type,
+          path: e.path,
+          size: e.size,
+        })),
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.post("/projects/:id/workspaces", validate(createProjectWorkspaceSchema), async (req, res) => {

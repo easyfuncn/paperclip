@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useLocation, Navigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PROJECT_COLORS, isUuidLike } from "@paperclipai/shared";
-import { projectsApi } from "../api/projects";
+import { FileText, ImageIcon, Film, Folder, ChevronLeft } from "lucide-react";
+import { projectsApi, type WorkspaceFileEntry } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -15,10 +16,12 @@ import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveSta
 import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { IssuesList } from "../components/IssuesList";
+import { MarkdownBody } from "../components/MarkdownBody";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { projectRouteRef, cn } from "../lib/utils";
 import { Tabs } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 /* ── Top-level tab types ── */
 
@@ -35,17 +38,156 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   return null;
 }
 
+/** Preview item: either from workspace file list or project assets. */
+interface PreviewFileItem {
+  name: string;
+  contentPath: string;
+}
+
+/** Classify by filename/contentType for preview: md, image, or video. */
+function getPreviewType(item: { name?: string | null; contentType?: string | null }): "md" | "image" | "video" | null {
+  const ct = (item.contentType ?? "").toLowerCase();
+  const name = (item.name ?? "").toLowerCase();
+  if (ct.startsWith("image/") || /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(name)) return "image";
+  if (ct.startsWith("video/") || /\.(mp4|webm|ogg|mov|avi)$/i.test(name)) return "video";
+  if (
+    ct.includes("markdown") ||
+    ct === "text/markdown" ||
+    ct.startsWith("text/") ||
+    /\.mdx?$/i.test(name)
+  )
+    return "md";
+  return null;
+}
+
+function formatByteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/* ── File preview dialog (md / image / video) ── */
+
+function FilePreviewDialog({
+  item,
+  previewType,
+  open,
+  onOpenChange,
+}: {
+  item: PreviewFileItem | null;
+  previewType: "md" | "image" | "video" | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [mdContent, setMdContent] = useState<string | null>(null);
+  const [mdError, setMdError] = useState<string | null>(null);
+  const [mdLoading, setMdLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !item || previewType !== "md") {
+      setMdContent(null);
+      setMdError(null);
+      setMdLoading(false);
+      return;
+    }
+    setMdLoading(true);
+    setMdError(null);
+    fetch(item.contentPath, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.statusText || "Failed to load");
+        return res.text();
+      })
+      .then((text) => {
+        setMdContent(text);
+        setMdError(null);
+      })
+      .catch((err) => {
+        setMdError(err instanceof Error ? err.message : "Failed to load content");
+        setMdContent(null);
+      })
+      .finally(() => setMdLoading(false));
+  }, [open, item?.contentPath, previewType]);
+
+  if (!item) return null;
+  const title = item.name;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn(
+          "flex flex-col max-w-[90vw] max-h-[90vh] w-full overflow-hidden",
+          previewType === "image" && "p-2",
+          (previewType === "video" || previewType === "md") && "max-w-4xl"
+        )}
+        showCloseButton
+      >
+        <DialogTitle className="sr-only">{title}</DialogTitle>
+        {previewType === "image" && (
+          <div className="flex-1 min-h-0 flex items-center justify-center overflow-auto">
+            <img
+              src={item.contentPath}
+              alt={title}
+              className="max-w-full max-h-full w-auto h-auto object-contain"
+            />
+          </div>
+        )}
+        {previewType === "video" && (
+          <div className="flex-1 min-h-0 flex items-center justify-center rounded-md overflow-hidden bg-muted">
+            <video
+              src={item.contentPath}
+              controls
+              preload="metadata"
+              className="max-w-full max-h-full w-auto h-auto object-contain"
+            />
+          </div>
+        )}
+        {previewType === "md" && (
+          <div className="flex-1 min-h-0 overflow-auto">
+            {mdLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+            {mdError && <p className="text-sm text-destructive">{mdError}</p>}
+            {mdContent != null && !mdError && (
+              <div className="prose prose-sm dark:prose-invert max-w-none pr-4">
+                <MarkdownBody>{mdContent}</MarkdownBody>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ── Overview tab content ── */
 
 function OverviewContent({
   project,
+  projectId,
+  companyId,
   onUpdate,
   imageUploadHandler,
 }: {
   project: { description: string | null; status: string; targetDate: string | null };
+  projectId: string;
+  companyId: string | null;
   onUpdate: (data: Record<string, unknown>) => void;
   imageUploadHandler?: (file: File) => Promise<string>;
 }) {
+  const [preview, setPreview] = useState<{ item: PreviewFileItem; type: "md" | "image" | "video" } | null>(null);
+  const [currentPath, setCurrentPath] = useState("");
+  const { data: filesData, isLoading: filesLoading } = useQuery({
+    queryKey: queryKeys.projects.workspaceFiles(projectId, currentPath),
+    queryFn: () =>
+      projectsApi.listProjectWorkspaceFiles(
+        projectId,
+        companyId ?? undefined,
+        currentPath || undefined,
+      ),
+    enabled: !!projectId,
+  });
+  const entries: WorkspaceFileEntry[] = filesData?.entries ?? [];
+  const parentPath = currentPath.includes("/") ? currentPath.replace(/\/[^/]+$/, "") : "";
+  const pathSegments = currentPath ? currentPath.split("/").filter(Boolean) : [];
+
   return (
     <div className="space-y-6">
       <InlineEditor
@@ -72,6 +214,114 @@ function OverviewContent({
           </div>
         )}
       </div>
+
+      <div>
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <h3 className="text-sm font-medium text-foreground">Workspace files</h3>
+          {pathSegments.length > 0 ? (
+            <nav className="flex items-center gap-1 text-sm text-muted-foreground" aria-label="Breadcrumb">
+              <button
+                type="button"
+                onClick={() => setCurrentPath("")}
+                className="hover:text-foreground transition-colors"
+              >
+                root
+              </button>
+              {pathSegments.map((segment, i) => {
+                const toPath = pathSegments.slice(0, i + 1).join("/");
+                return (
+                  <span key={toPath} className="flex items-center gap-1">
+                    <span>/</span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPath(toPath)}
+                      className={i < pathSegments.length - 1 ? "hover:text-foreground transition-colors" : "text-foreground"}
+                    >
+                      {segment}
+                    </button>
+                  </span>
+                );
+              })}
+            </nav>
+          ) : null}
+        </div>
+        {filesLoading ? (
+          <p className="text-sm text-muted-foreground">Loading files...</p>
+        ) : !filesData?.workspaceId ? (
+          <p className="text-sm text-muted-foreground">No workspace directory configured. Add a workspace with a path (cwd) to list files.</p>
+        ) : (
+          <ul className="border border-border rounded-md divide-y divide-border">
+            {currentPath ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPath(parentPath)}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted/80 transition-colors"
+                >
+                  <ChevronLeft className="shrink-0 size-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">..</span>
+                </button>
+              </li>
+            ) : null}
+            {entries.map((entry) => {
+              if (entry.type === "directory") {
+                return (
+                  <li key={entry.path}>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPath(entry.path)}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted/80 transition-colors"
+                    >
+                      <Folder className="shrink-0 size-4 text-muted-foreground" />
+                      <span className="flex-1 truncate">{entry.name}</span>
+                    </button>
+                  </li>
+                );
+              }
+              const previewType = getPreviewType({ name: entry.name });
+              const contentPath = `/api/projects/${encodeURIComponent(projectId)}/files/content?path=${encodeURIComponent(entry.path)}`;
+              const item: PreviewFileItem = { name: entry.name, contentPath };
+              const Icon =
+                previewType === "md" ? FileText : previewType === "image" ? ImageIcon : previewType === "video" ? Film : FileText;
+              return (
+                <li key={entry.path}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (previewType) setPreview({ item, type: previewType });
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2 text-left text-sm rounded-none transition-colors",
+                      previewType
+                        ? "hover:bg-muted/80 cursor-pointer"
+                        : "cursor-default opacity-70"
+                    )}
+                  >
+                    <Icon className="shrink-0 size-4 text-muted-foreground" />
+                    <span className="flex-1 truncate">{entry.name}</span>
+                    {entry.size != null && (
+                      <span className="text-muted-foreground shrink-0">{formatByteSize(entry.size)}</span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {filesData?.workspaceId && entries.length === 0 && !currentPath ? (
+          <p className="text-sm text-muted-foreground mt-2">Workspace directory is empty.</p>
+        ) : null}
+        {filesData?.workspaceId && entries.length === 0 && currentPath ? (
+          <p className="text-sm text-muted-foreground mt-2">This folder is empty.</p>
+        ) : null}
+      </div>
+
+      <FilePreviewDialog
+        item={preview?.item ?? null}
+        previewType={preview?.type ?? null}
+        open={!!preview}
+        onOpenChange={(open) => !open && setPreview(null)}
+      />
     </div>
   );
 }
@@ -249,6 +499,11 @@ export function ProjectDetail() {
       if (!resolvedCompanyId) throw new Error("No company selected");
       return assetsApi.uploadImage(resolvedCompanyId, file, `projects/${projectLookupRef || "draft"}`);
     },
+    onSuccess: () => {
+      if (projectLookupRef) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.assets(projectLookupRef) });
+      }
+    },
   });
 
   useEffect(() => {
@@ -380,6 +635,8 @@ export function ProjectDetail() {
       {activeTab === "overview" && (
         <OverviewContent
           project={project}
+          projectId={project.id}
+          companyId={resolvedCompanyId ?? null}
           onUpdate={(data) => updateProject.mutate(data)}
           imageUploadHandler={async (file) => {
             const asset = await uploadImage.mutateAsync(file);

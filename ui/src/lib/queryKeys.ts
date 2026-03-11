@@ -36,6 +36,9 @@ export const queryKeys = {
   projects: {
     list: (companyId: string) => ["projects", companyId] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+    assets: (projectId: string) => ["projects", "assets", projectId] as const,
+    workspaceFiles: (projectId: string, subPath?: string) =>
+      ["projects", "workspaceFiles", projectId, subPath ?? ""] as const,
   },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
