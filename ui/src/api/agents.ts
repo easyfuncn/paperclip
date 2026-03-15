@@ -45,6 +45,17 @@ export interface AgentHireResponse {
   approval: Approval | null;
 }
 
+export interface AgencyTemplatePublic {
+  id: string;
+  name: string;
+  role: string;
+}
+
+export interface AgencyTemplatesResponse {
+  divisions: { id: string; label: string; order: number }[];
+  templatesByDivision: Record<string, AgencyTemplatePublic[]>;
+}
+
 function withCompanyScope(path: string, companyId?: string) {
   if (!companyId) return path;
   const separator = path.includes("?") ? "&" : "?";
@@ -121,6 +132,9 @@ export const agentsApi = {
     api.get<AdapterModel[]>(
       `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models`,
     ),
+  getAgencyTemplates: () => api.get<AgencyTemplatesResponse>("/agency-templates"),
+  getAgencyTemplateContent: (templateId: string) =>
+    api.getText(`/agency-templates/content?templateId=${encodeURIComponent(templateId)}`),
   testEnvironment: (
     companyId: string,
     type: string,

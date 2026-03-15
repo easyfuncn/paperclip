@@ -154,6 +154,20 @@ After `worktree init`, both the server and the CLI auto-load the repo-local `.pa
 
 That repo-local env also sets `PAPERCLIP_IN_WORKTREE=true`, which the server can use for worktree-specific UI behavior such as an alternate favicon.
 
+## Agency templates (agency-agents)
+
+When creating a new agent, the UI can offer preset roles from the [agency-agents](https://github.com/msitarzewski/agency-agents) repo (e.g. Frontend Developer, Backend Architect, Growth Hacker), grouped by department. The server injects the chosen template’s Markdown as the agent’s instructions via `adapterConfig.instructionsFilePath`.
+
+- **Vendor path**: Agency templates are loaded from `vendor/agency-agents` (git submodule). After cloning the repo, run:
+  ```sh
+  git submodule update --init
+  ```
+  to populate `vendor/agency-agents`. If the directory is missing, the “From Agency” block in the New Agent page is hidden and no templates are returned.
+
+- **Override path**: Set `AGENCY_AGENTS_DIR` to an absolute path to use a different copy of the agency-agents repo (e.g. in Docker or a custom install).
+
+- **Manifest**: The list of divisions and templates is defined in `server/agency-agents-manifest.json`. Only templates whose file exists under the vendor (or override) directory are exposed. To add or reorder templates, edit the manifest and ensure the corresponding `.md` files exist in the agency-agents tree.
+
 Print shell exports explicitly when needed:
 
 ```sh

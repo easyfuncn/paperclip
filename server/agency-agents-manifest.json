@@ -1,0 +1,37 @@
+{
+  "divisions": [
+    { "id": "engineering", "label": "Engineering", "order": 1 },
+    { "id": "design", "label": "Design", "order": 2 },
+    { "id": "marketing", "label": "Marketing", "order": 3 },
+    { "id": "product", "label": "Product", "order": 4 },
+    { "id": "project-management", "label": "Project Management", "order": 5 },
+    { "id": "testing", "label": "Testing", "order": 6 },
+    { "id": "sales", "label": "Sales", "order": 7 },
+    { "id": "support", "label": "Support", "order": 8 },
+    { "id": "paid-media", "label": "Paid Media", "order": 9 },
+    { "id": "specialized", "label": "Specialized", "order": 10 }
+  ],
+  "templates": [
+    { "id": "engineering/frontend-developer", "division": "engineering", "name": "Frontend Developer", "role": "engineer", "path": "engineering/engineering-frontend-developer.md" },
+    { "id": "engineering/backend-architect", "division": "engineering", "name": "Backend Architect", "role": "engineer", "path": "engineering/engineering-backend-architect.md" },
+    { "id": "engineering/devops-automator", "division": "engineering", "name": "DevOps Automator", "role": "devops", "path": "engineering/engineering-devops-automator.md" },
+    { "id": "engineering/rapid-prototyper", "division": "engineering", "name": "Rapid Prototyper", "role": "engineer", "path": "engineering/engineering-rapid-prototyper.md" },
+    { "id": "engineering/code-reviewer", "division": "engineering", "name": "Code Reviewer", "role": "engineer", "path": "engineering/engineering-code-reviewer.md" },
+    { "id": "design/ui-designer", "division": "design", "name": "UI Designer", "role": "designer", "path": "design/design-ui-designer.md" },
+    { "id": "design/ux-researcher", "division": "design", "name": "UX Researcher", "role": "designer", "path": "design/design-ux-researcher.md" },
+    { "id": "design/ux-architect", "division": "design", "name": "UX Architect", "role": "designer", "path": "design/design-ux-architect.md" },
+    { "id": "design/brand-guardian", "division": "design", "name": "Brand Guardian", "role": "designer", "path": "design/design-brand-guardian.md" },
+    { "id": "marketing/growth-hacker", "division": "marketing", "name": "Growth Hacker", "role": "researcher", "path": "marketing/marketing-growth-hacker.md" },
+    { "id": "marketing/content-creator", "division": "marketing", "name": "Content Creator", "role": "researcher", "path": "marketing/marketing-content-creator.md" },
+    { "id": "marketing/seo-specialist", "division": "marketing", "name": "SEO Specialist", "role": "researcher", "path": "marketing/marketing-seo-specialist.md" },
+    { "id": "product/sprint-prioritizer", "division": "product", "name": "Sprint Prioritizer", "role": "pm", "path": "product/product-sprint-prioritizer.md" },
+    { "id": "product/feedback-synthesizer", "division": "product", "name": "Feedback Synthesizer", "role": "pm", "path": "product/product-feedback-synthesizer.md" },
+    { "id": "project-management/project-shepherd", "division": "project-management", "name": "Project Shepherd", "role": "pm", "path": "project-management/project-management-project-shepherd.md" },
+    { "id": "testing/reality-checker", "division": "testing", "name": "Reality Checker", "role": "qa", "path": "testing/testing-reality-checker.md" },
+    { "id": "testing/evidence-collector", "division": "testing", "name": "Evidence Collector", "role": "qa", "path": "testing/testing-evidence-collector.md" },
+    { "id": "sales/outbound-strategist", "division": "sales", "name": "Outbound Strategist", "role": "general", "path": "sales/sales-outbound-strategist.md" },
+    { "id": "support/support-responder", "division": "support", "name": "Support Responder", "role": "general", "path": "support/support-support-responder.md" },
+    { "id": "paid-media/ppc-strategist", "division": "paid-media", "name": "PPC Campaign Strategist", "role": "general", "path": "paid-media/paid-media-ppc-strategist.md" },
+    { "id": "specialized/agents-orchestrator", "division": "specialized", "name": "Agents Orchestrator", "role": "general", "path": "specialized/agents-orchestrator.md" }
+  ]
+}

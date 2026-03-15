@@ -3,10 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { agentsApi } from "../api/agents";
+import { agentsApi, type AgencyTemplatePublic } from "../api/agents";
 import { skillsApi, type SkillIndexEntry } from "../api/skills";
 import { queryKeys } from "../lib/queryKeys";
-import { AGENT_ROLES } from "@paperclipai/shared";
+import { AGENT_ROLES, AGENT_ROLE_LABELS } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -86,6 +86,13 @@ export function NewAgent() {
   const [reportsToOpen, setReportsToOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
+  const [selectedAgencyDivision, setSelectedAgencyDivision] = useState<string>("");
+  const [selectedAgencyTemplateId, setSelectedAgencyTemplateId] = useState<string>("");
+
+  const { data: agencyTemplates } = useQuery({
+    queryKey: queryKeys.agencyTemplates,
+    queryFn: () => agentsApi.getAgencyTemplates(),
+  });
 
   const { data: skillsIndex } = useQuery({
     queryKey: queryKeys.skills.index,
@@ -208,7 +215,7 @@ export function NewAgent() {
         return;
       }
     }
-    createAgent.mutate({
+    const payload: Record<string, unknown> = {
       name: name.trim(),
       role: effectiveRole,
       ...(title.trim() ? { title: title.trim() } : {}),
@@ -226,7 +233,9 @@ export function NewAgent() {
         },
       },
       budgetMonthlyCents: 0,
-    });
+    };
+    if (selectedAgencyTemplateId) payload.agencyTemplateId = selectedAgencyTemplateId;
+    createAgent.mutate(payload);
   }
 
   const currentReportsTo = (agents ?? []).find((a) => a.id === reportsTo);
@@ -241,6 +250,90 @@ export function NewAgent() {
       </div>
 
       <div className="border border-border">
+        {/* From Agency (by department) */}
+        {agencyTemplates && agencyTemplates.divisions.length > 0 && (
+          <div className="px-4 pt-4 pb-2 border-b border-border space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">From Agency</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                value={selectedAgencyDivision}
+                onChange={(e) => {
+                  const div = e.target.value;
+                  setSelectedAgencyDivision(div);
+                  setSelectedAgencyTemplateId("");
+                }}
+              >
+                <option value="">Select department…</option>
+                {agencyTemplates.divisions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm min-w-[12rem]"
+                value={selectedAgencyTemplateId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedAgencyTemplateId(id);
+                  if (id && agencyTemplates.templatesByDivision) {
+                    for (const list of Object.values(agencyTemplates.templatesByDivision)) {
+                      const t = list.find((x) => x.id === id);
+                      if (t) {
+                        setName(t.name);
+                        setRole(t.role);
+                        setTitle(AGENT_ROLE_LABELS[t.role as keyof typeof AGENT_ROLE_LABELS] ?? t.role);
+                        agentsApi.getAgencyTemplateContent(id).then(
+                          (content) => {
+                            setConfigValues((prev) => ({ ...prev, promptTemplate: content }));
+                          },
+                          () => {
+                            setConfigValues((prev) => ({
+                              ...prev,
+                              promptTemplate: "You are {{agent.name}} ({{agent.role}}). Continue your Paperclip work.",
+                            }));
+                          },
+                        );
+                        break;
+                      }
+                    }
+                  }
+                }}
+                disabled={!selectedAgencyDivision}
+              >
+                <option value="">Select template…</option>
+                {(selectedAgencyDivision
+                  ? (agencyTemplates.templatesByDivision[selectedAgencyDivision] ?? [])
+                  : []
+                ).map((t: AgencyTemplatePublic) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              {selectedAgencyTemplateId && (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setSelectedAgencyDivision("");
+                    setSelectedAgencyTemplateId("");
+                    setConfigValues((prev) => ({ ...prev, promptTemplate: "" }));
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {selectedAgencyTemplateId && (
+              <p className="text-xs text-muted-foreground">
+                Template content is loaded into the Prompt below. It is also injected as Agent instructions file at runtime.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Name */}
         <div className="px-4 pt-4 pb-2">
           <input

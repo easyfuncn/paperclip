@@ -117,6 +117,12 @@ export function NewAgentDialog() {
     navigate(`/agents/new?adapterType=${encodeURIComponent(adapterType)}`);
   }
 
+  function handleOpenFullForm() {
+    closeNewAgent();
+    setShowAdvancedCards(false);
+    navigate("/agents/new");
+  }
+
   return (
     <Dialog
       open={newAgentOpen}
@@ -168,9 +174,17 @@ export function NewAgentDialog() {
               </Button>
 
               {/* Advanced link */}
-              <div className="text-center">
+              <div className="text-center space-y-2">
                 <button
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                  type="button"
+                  className="block w-full text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                  onClick={handleOpenFullForm}
+                >
+                  Open full form with <strong>From Agency</strong> templates
+                </button>
+                <button
+                  type="button"
+                  className="block w-full text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
                   onClick={handleAdvancedConfig}
                 >
                   I want advanced configuration myself

@@ -44,6 +44,7 @@ export type CreateAgent = z.infer<typeof createAgentSchema>;
 export const createAgentHireSchema = createAgentSchema.extend({
   sourceIssueId: z.string().uuid().optional().nullable(),
   sourceIssueIds: z.array(z.string().uuid()).optional(),
+  agencyTemplateId: z.string().min(1).optional(),
 });
 
 export type CreateAgentHire = z.infer<typeof createAgentHireSchema>;

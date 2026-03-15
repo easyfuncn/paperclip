@@ -8,6 +8,7 @@ import {
   createAgentKeySchema,
   createAgentHireSchema,
   createAgentSchema,
+  type CreateAgentHire,
   isUuidLike,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
@@ -26,6 +27,7 @@ import {
   issueService,
   logActivity,
   secretService,
+  resolveAgencyTemplatePath,
 } from "../services/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -642,8 +644,17 @@ export function agentRoutes(db: Db) {
   router.post("/companies/:companyId/agent-hires", validate(createAgentHireSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCanCreateAgentsForCompany(req, companyId);
+    const body = req.body as CreateAgentHire;
     const sourceIssueIds = parseSourceIssueIds(req.body);
-    const { sourceIssueId: _sourceIssueId, sourceIssueIds: _sourceIssueIds, ...hireInput } = req.body;
+    const { sourceIssueId: _sourceIssueId, sourceIssueIds: _sourceIssueIds, agencyTemplateId, ...hireInput } = body;
+    if (agencyTemplateId) {
+      const instructionsPath = resolveAgencyTemplatePath(agencyTemplateId);
+      if (!instructionsPath) {
+        res.status(400).json({ error: "Invalid or unavailable agency template; ensure vendor/agency-agents is present and AGENCY_AGENTS_DIR is set if needed." });
+        return;
+      }
+      hireInput.adapterConfig = { ...(hireInput.adapterConfig ?? {}), instructionsFilePath: instructionsPath };
+    }
     const requestedAdapterConfig = applyCreateDefaultsByAdapterType(
       hireInput.adapterType,
       ((hireInput.adapterConfig ?? {}) as Record<string, unknown>),

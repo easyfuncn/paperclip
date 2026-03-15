@@ -78,4 +78,5 @@ export const queryKeys = {
   skills: {
     index: ["skills", "index"] as const,
   },
+  agencyTemplates: ["agency-templates"] as const,
 };
