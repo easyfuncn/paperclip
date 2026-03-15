@@ -175,13 +175,7 @@ export function NewAgentDialog() {
 
               {/* Advanced link */}
               <div className="text-center space-y-2">
-                <button
-                  type="button"
-                  className="block w-full text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
-                  onClick={handleOpenFullForm}
-                >
-                  Open full form with <strong>From Agency</strong> templates
-                </button>
+                
                 <button
                   type="button"
                   className="block w-full text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
